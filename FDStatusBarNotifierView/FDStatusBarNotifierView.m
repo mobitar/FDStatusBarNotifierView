@@ -20,6 +20,17 @@ NSTimeInterval const kTimeOnScreen = 2.0;
 
 @implementation FDStatusBarNotifierView
 
++ (instancetype)sharedInstance
+{
+    static FDStatusBarNotifierView *shared = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        shared = [[FDStatusBarNotifierView alloc] initWithMessage:@""];
+        shared.manuallyHide = YES;
+    });
+    return shared;
+}
+
 #pragma mark - Init
 
 - (id)init
@@ -29,19 +40,19 @@ NSTimeInterval const kTimeOnScreen = 2.0;
         self.clipsToBounds = YES;
         self.frame = CGRectMake(0, 20, [UIScreen mainScreen].bounds.size.width, 20);
         
-        self.messageLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 0, ([UIScreen mainScreen].bounds.size.width - 20), 20)];
+        self.messageLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, ([UIScreen mainScreen].bounds.size.width), 20)];
         if (floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_6_1) {
-            self.messageLabel.backgroundColor = [UIColor clearColor];
             self.messageLabel.textColor = [UIColor whiteColor];
         }else{
             // we might have to us white if the prefered statusbar style is UIStatusBarStyleLightContent
             self.messageLabel.textColor = [UIColor blackColor];
         }
+        self.messageLabel.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.8];
         self.messageLabel.textAlignment = NSTextAlignmentCenter;
         self.messageLabel.font = [UIFont boldSystemFontOfSize:12];
         self.messageLabel.lineBreakMode = NSLineBreakByWordWrapping;
         self.shouldHideOnTap = NO;
-        self.manuallyHide = NO;
+        self.manuallyHide = YES;
         [self addSubview:self.messageLabel];
         
         self.timeOnScreen = kTimeOnScreen;
@@ -72,32 +83,30 @@ NSTimeInterval const kTimeOnScreen = 2.0;
 
 #pragma mark - Presentation
 
+- (BOOL)isShown
+{
+    return self.superview != nil;
+}
+
 - (void)showInWindow:(UIWindow *)window
 {
     if (self.delegate && [self.delegate respondsToSelector:@selector(willPresentNotifierView:)]) {
         [self.delegate willPresentNotifierView:self];
     }
     
-    [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:UIStatusBarAnimationSlide];
+    [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:UIStatusBarAnimationNone];
     [window addSubview:self];
     
     NSDictionary *attributes = @{NSFontAttributeName:self.messageLabel.font};
     CGFloat textWith = 0;
     
-    if (floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_6_1) {
-        // Load resources for iOS 6.1 or earlier
-        textWith = [self.message sizeWithFont:self.messageLabel.font
-                            constrainedToSize:CGSizeMake(MAXFLOAT, 20)
-                                lineBreakMode:self.messageLabel.lineBreakMode].width;
-    } else {
-        // Load resources for iOS 7 or later
-        CGRect textSize = [self.message boundingRectWithSize:CGSizeMake(MAXFLOAT, 20)
-                                                     options:NSStringDrawingUsesFontLeading
-                                                  attributes:attributes
-                                                     context:nil];
-        
-        textWith = textSize.size.width;
-    }
+    // Load resources for iOS 7 or later
+    CGRect textSize = [self.message boundingRectWithSize:CGSizeMake(MAXFLOAT, 20)
+                                                 options:NSStringDrawingUsesFontLeading
+                                              attributes:attributes
+                                                 context:nil];
+    
+    textWith = textSize.size.width;
     
     if (textWith < self.messageLabel.frame.size.width) { // the message to display fits in the status bar view
         
@@ -112,6 +121,7 @@ NSTimeInterval const kTimeOnScreen = 2.0;
         if (CGRectGetMinY(animationStartFrame) > 0) {
             animationStartFrame.size.height = 0;
         }
+        animationStartFrame.origin.y = - animationStartFrame.size.height;
         self.frame = animationStartFrame;
         [UIView animateWithDuration:.4
                          animations:^{
@@ -196,7 +206,16 @@ NSTimeInterval const kTimeOnScreen = 2.0;
     }
 }
 
-- (void)hide
+- (void)hideAfter:(CGFloat)delay
+{
+    double delayInSeconds = delay;
+    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayInSeconds * NSEC_PER_SEC));
+    dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
+        [self hide];
+    });
+}
+
+- (void)hideWithCompletion:(void(^)())completion
 {
     if (self.isHidden) {
         return;
@@ -208,7 +227,7 @@ NSTimeInterval const kTimeOnScreen = 2.0;
     
     CGRect animationDestinationFrame;
     if ([[UIApplication sharedApplication] statusBarOrientation] == UIInterfaceOrientationPortrait) {
-        animationDestinationFrame = CGRectMake(0, 20, [UIScreen mainScreen].bounds.size.width, 0);
+        animationDestinationFrame = CGRectMake(0, -20, [UIScreen mainScreen].bounds.size.width, 0);
     } else {
         animationDestinationFrame = CGRectMake(0, 20, [UIScreen mainScreen].bounds.size.height, 0);
     }
@@ -227,7 +246,16 @@ NSTimeInterval const kTimeOnScreen = 2.0;
                              
                              [self removeFromSuperview];
                          }
+                         
+                         if(completion) {
+                             completion();
+                         }
                      }];
+}
+
+- (void)hide
+{
+    [self hideWithCompletion:nil];
 }
 
 - (BOOL)isHidden

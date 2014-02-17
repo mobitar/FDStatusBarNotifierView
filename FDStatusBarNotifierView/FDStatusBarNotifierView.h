@@ -28,6 +28,12 @@ extern NSTimeInterval const kTimeOnScreen;
 - (void)showInWindow:(UIWindow *)window;
 - (void)showAboveNavigationController:(UINavigationController *)navigationController;
 - (void)hide;
+- (void)hideWithCompletion:(void(^)())completion;
+- (void)hideAfter:(CGFloat)delay;
+
+- (BOOL)isShown;
+
++ (instancetype)sharedInstance;
 
 @end
 
